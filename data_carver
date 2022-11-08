@@ -1,0 +1,152 @@
+import os
+import binascii
+import hashlib
+
+# Enter your file here. I entered the carve.lab file. You can enter your other binary file here for testing
+file_system = input('Enter the file system in which files are to be searched:')
+file_system_obj = open(file_system, 'rb')
+data_file_system = file_system_obj.read()
+# Return the hexadecimal representation of the binary data.
+# Every byte of data is converted into the corresponding 2-digit hex representation.
+# The resulting string is therefore twice as long as the length of data.
+# source - https://docs.python.org/2/library/binascii.html
+hex_data_file_system = binascii.hexlify(data_file_system)
+
+
+# sof and eof markers for jpg
+sof_jpg = binascii.hexlify(b'\x50\x4B\x03\x04\x14\x00\x06\x00')
+eof_jpg = binascii.hexlify(b'\x50\x4B\x05\x06')
+
+# sof and eof markers for png
+sof_png = binascii.hexlify(b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A')
+eof_png = binascii.hexlify(b'\x49\x45\x4E\x44\xAE\x42\x60\x82')
+
+# sof and eof markers for pdf
+sof_pdf = binascii.hexlify(b'\x25\x50\x44\x46')
+eof_pdf_1 = binascii.hexlify(b'\x0A\x25\x25\x45\x4F\x46')
+eof_pdf_2 = binascii.hexlify(b'\x0A\x25\x25\x45\x4F\x46\x0A ')
+eof_pdf_3 = binascii.hexlify(b'\x0D\x0A\x25\x25\x45\x4F\x46\x0D\x0A')
+eof_pdf_4 = binascii.hexlify(b'\x0D\x25\x25\x45\x4F\x46\x0D')
+
+# sof_word = binascii.hexlify(b'\x50\x4B\x03\x04\x14\x00\x06\x00')
+# eof_word = binascii.hexlify(b'\x50\x4B\x05\x06')
+
+
+def find_all(a_str, sub):
+    """
+    binascii.hexlify gives a single long string of the binary data of the file system taken in as input
+    hex_data_file_system is where it is stored in
+    sof_type and eof_type variables do the same job of storing the string representation of the binary data
+    This function will take in the sof_type and eof_type as substring parameters and hex_data_file_system as the main
+    string
+    in the main string, the function will find all occurrences of the substrings and get their indexes
+    """
+    start = 0
+    while True:
+        start = a_str.find(sub, start)
+        if start == -1:
+            return
+        yield start
+        start += 1  # use start += 1 to find overlapping matches
+
+
+# start and end indexes for jpg
+value_start_index_jpg = list(find_all(hex_data_file_system, sof_jpg))
+value_end_index_jpg = list(find_all(hex_data_file_system, eof_jpg))
+
+
+# start and end indexes for png
+value_start_index_png = list(find_all(hex_data_file_system, sof_png))
+value_end_index_png = list(find_all(hex_data_file_system, eof_png))
+
+# start and end indexes for pdf
+value_start_index_pdf = list(find_all(hex_data_file_system, sof_pdf))
+value_end_index_1_pdf = list(find_all(hex_data_file_system, eof_pdf_1))
+value_end_index_2_pdf = list(find_all(hex_data_file_system, eof_pdf_2))
+value_end_index_3_pdf = list(find_all(hex_data_file_system, eof_pdf_3))
+value_end_index_4_pdf = list(find_all(hex_data_file_system, eof_pdf_4))
+
+# combined list of all end indexes for pdf
+unsorted_value_end_index_pdf = value_end_index_1_pdf + value_end_index_2_pdf + value_end_index_3_pdf + value_end_index_4_pdf
+# sorted combined list
+value_end_index_pdf = sorted(unsorted_value_end_index_pdf)
+
+# gets the current working directory, useful for returning to it from formed subdirectories which store the found files
+current_path = os.getcwd()
+
+# Additional bytes are the bytes hold the eof markers. The indexes for the end of file markers indicate the start of the
+# eof, these additional bytes are added so that in the image, the eof is included as well. Odd values are include one
+# additional byte in addition to the eof. This is because binascii.unhexlify() will throw up an error
+# "TypeError: Odd-length string" while working with strings of an odd length
+additional_bytes_jpg = 4
+additional_bytes_png = 16
+additional_bytes_pdf = 18
+
+
+def required_output(start, end, type_of_file, extra_bytes):
+    """
+    The main function which implements the code functionality.
+    Will take in the sof, eof indexes calculated earlier and return a string in between those indexes
+    That string will be unhexlified to give binary data which will be written to files
+    """
+    # to create a directory to store the files in as required in the question
+    path = os.getcwd()
+    format_path = path + '\Arya_' + type_of_file
+    os.mkdir(format_path)
+    os.chdir(format_path)
+    information_file_name = "info.txt"
+    counter = 0
+    # all possible combinations of sof and eof will be tried to ensure all files are found. Drawback is that additional
+    # garbage data is generated. combinations where eof<soft are not considered
+    for i in start:
+        for j in end:
+            if i < j:
+                counter = counter+1
+                if (i + j) % 2 == 0:
+                    x = j+extra_bytes
+                    file_hex_output = hex_data_file_system[i:x]
+                else:
+                    x = j+extra_bytes
+                    file_hex_output_1 = hex_data_file_system[i:x]
+                    file_hex_output = file_hex_output_1 + b'0'
+
+                # hexlified string converted to binary data
+                file_byte_output = binascii.unhexlify(file_hex_output)
+                print('Potential file found of type .' + type_of_file)
+                # binary data being written to a file
+                carved_file_name = "img" + str(counter) + "." + type_of_file
+                carved_file = open(carved_file_name, 'wb')
+                carved_file.write(file_byte_output)
+                carved_file.close()
+                # All other data such as file start and end offsets, size, md5 hash written to info.txt file
+                # code for it as below
+                file_start_offset = hex((i//2))
+                file_end_offset = hex((x // 2))
+                file_size = (x // 2) - (i // 2)
+
+                unhashed_string = str(file_hex_output)
+                hashed_string = hashlib.md5(unhashed_string.encode())
+                md5_hash_file = hashed_string.hexdigest()
+                information_file = open(information_file_name, 'a')
+                information_file.write("The file found is: " + carved_file_name)
+                information_file.write("\n Starting Offset:" + file_start_offset)
+                information_file.write("\n Ending Offset: " + file_end_offset)
+                information_file.write("\n File size in bytes: " + str(file_size))
+                information_file.write("\n The md5 hash of the file is: " + md5_hash_file)
+                information_file.write("\n")
+                information_file.write("\n")
+                information_file.close()
+
+    print('Please refer the info.txt file in the newly created directory for file information such as start offset,'
+          'end offset, file size, file md5 hash')
+
+
+# calling function required_output to get all jpg files
+required_output(value_start_index_jpg, value_end_index_jpg, 'docx', additional_bytes_jpg)
+os.chdir(current_path)
+# # calling function required_output to get all png files
+# required_output(value_start_index_png, value_end_index_png, 'png', additional_bytes_png)
+# os.chdir(current_path)
+# # calling function required_output to get all pdf files
+# required_output(value_start_index_pdf, value_end_index_pdf, 'pdf', additional_bytes_pdf)
+# os.chdir(current_path)
